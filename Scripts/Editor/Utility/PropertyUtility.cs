@@ -34,12 +34,28 @@ namespace NaughtyAttributes.Editor
             return (GetFieldInfoAndStaticTypeFromPropertyDelegate) Delegate.CreateDelegate(typeof(GetFieldInfoAndStaticTypeFromPropertyDelegate), methodInfo);
         });
 
+        public static T GetAttribute<T>(FieldInfo fieldInfo) where T : class
+        {
+            T[] attributes = GetAttributes<T>(fieldInfo);
+            return (attributes.Length > 0) ? attributes[0] : null;
+        }
+
         public static T[] GetAttributes<T>(SerializedProperty property) where T : class
         {
             UnityEngine.Profiling.Profiler.BeginSample("GetFieldInfoFromPropertyPath");
             //FieldInfo fieldInfo = ReflectionUtility.GetField(GetTargetObjectWithProperty(property), property.name);
             var fieldInfo = getFieldInfoFunc.Value(property, out var type);
             UnityEngine.Profiling.Profiler.EndSample();
+            if (fieldInfo == null)
+            {
+                return new T[] { };
+            }
+
+            return (T[])fieldInfo.GetCustomAttributes(typeof(T), true);
+        }
+
+        public static T[] GetAttributes<T>(FieldInfo fieldInfo) where T : class
+        {
             if (fieldInfo == null)
             {
                 return new T[] { };
@@ -460,6 +476,5 @@ namespace NaughtyAttributes.Editor
 
             return enumerator.Current;
         }
-
     }
 }
