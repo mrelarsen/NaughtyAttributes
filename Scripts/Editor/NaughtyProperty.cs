@@ -17,5 +17,11 @@ namespace NaughtyAttributes.Editor
 
         public bool cachedIsVisible = true;
         public bool cachedIsEnabled = true;
+
+        public bool CheckVisibleAndEnabled()
+        {
+            cachedIsEnabled = PropertyUtility.IsEnabled(readOnlyAttribute, enableIfAttribute, serializedProperty);
+            return cachedIsVisible = PropertyUtility.IsVisible(showIfAttribute, serializedProperty);
+        }
     }
 }

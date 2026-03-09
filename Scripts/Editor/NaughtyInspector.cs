@@ -15,9 +15,9 @@ namespace NaughtyAttributes.Editor
     {
         private readonly Dictionary<string, SavedBool> _foldouts = new();
 
-        private SerializedProperty[]                    _nonGroupedSerializedProperties;
-        private IGrouping<string, SerializedProperty>[] _groupedSerializedProperties;
-        private IGrouping<string, SerializedProperty>[] _foldoutSerializedProperties;
+        private NaughtyProperty[] _nonGroupedSerializedProperties;
+        private IGrouping<string, NaughtyProperty>[] _groupedSerializedProperties;
+        private IGrouping<string, NaughtyProperty>[] _foldoutSerializedProperties;
 
         private class InspectorTypeInfo
         {
@@ -25,15 +25,15 @@ namespace NaughtyAttributes.Editor
 
             public Object ObjectWithDefaultValues; // Object to pull non-serialized default values from.
 
-            public bool         HasMethods;
+            public bool HasMethods;
             public MethodInfo[] Methods;
 
-            public bool                           HasNonSerializedFields;
-            public FieldInfo[]                    NonGroupedNonSerializedFields;
+            public bool HasNonSerializedFields;
+            public FieldInfo[] NonGroupedNonSerializedFields;
             public IGrouping<string, FieldInfo>[] GroupedNonSerializedFields;
             public IGrouping<string, FieldInfo>[] FoldoutNonSerializedFields;
 
-            public bool           HasNativeProperties;
+            public bool HasNativeProperties;
             public PropertyInfo[] NonGroupedSerializedNativeProperties;
             public PropertyInfo[] GroupedSerializedNativeProperties;
             public PropertyInfo[] FoldoutSerializedNativeProperties;
@@ -45,12 +45,14 @@ namespace NaughtyAttributes.Editor
             public PropertyInfo[] OtherNativeProperties;
         }
 
-        private static readonly HashSet<(Type, string)>             NonGroupedPropertyPaths    = new();
-        private static readonly Dictionary<(Type, string), string>  PropertyPathToBoxGroupName = new();
-        private static readonly Dictionary<(Type, string), string>  PropertyPathToFoldoutName  = new();
+        private static readonly HashSet<(Type, string)> NonGroupedPropertyPaths = new();
+        private static readonly Dictionary<(Type, string), string> PropertyPathToBoxGroupName = new();
+        private static readonly Dictionary<(Type, string), string> PropertyPathToFoldoutName = new();
 
-        private static readonly Dictionary<Type, InspectorTypeInfo> InspectorTypeCache         = new();
-        private                 InspectorTypeInfo                   _inspectorTypeInfo;
+        private static readonly Dictionary<Type, InspectorTypeInfo> InspectorTypeCache = new();
+        private InspectorTypeInfo _inspectorTypeInfo;
+        protected bool _useCachedMetaAttributes;
+        protected bool _changeDetected;
 
         protected virtual void OnEnable()
         {
@@ -62,7 +64,7 @@ namespace NaughtyAttributes.Editor
             var isAlreadyCached = InspectorTypeCache.TryGetValue(type, out _inspectorTypeInfo);
             if (!isAlreadyCached)
             {
-                _inspectorTypeInfo       = new InspectorTypeInfo();
+                _inspectorTypeInfo = new InspectorTypeInfo();
                 InspectorTypeCache[type] = _inspectorTypeInfo;
             }
 
@@ -72,8 +74,8 @@ namespace NaughtyAttributes.Editor
             {
                 // Remap to cached groups
                 _nonGroupedSerializedProperties = GetNonGroupedPropertiesCached(type, serializedProperties);
-                _groupedSerializedProperties    = GetGroupedPropertiesCached(type, serializedProperties);
-                _foldoutSerializedProperties    = GetFoldoutPropertiesCached(type, serializedProperties);
+                _groupedSerializedProperties = GetGroupedPropertiesCached(type, serializedProperties);
+                _foldoutSerializedProperties = GetFoldoutPropertiesCached(type, serializedProperties);
                 return;
             }
 
@@ -92,8 +94,8 @@ namespace NaughtyAttributes.Editor
                 Object temporaryObject = target switch
                 {
                     MonoBehaviour mono => Instantiate(mono.gameObject).GetComponent(type),
-                    ScriptableObject   => CreateInstance(type),
-                    _                  => null
+                    ScriptableObject => CreateInstance(type),
+                    _ => null
                 };
 
                 // Create untracked object and copy instance fields to get initializer and constructor defaults
@@ -129,13 +131,13 @@ namespace NaughtyAttributes.Editor
 
             // Categorize serialized properties into ungrouped, [BoxGroup], and [Foldout] groups
             _nonGroupedSerializedProperties = GetNonGroupedProperties(serializedProperties);
-            _groupedSerializedProperties    = GetGroupedProperties(serializedProperties);
-            _foldoutSerializedProperties    = GetFoldoutProperties(serializedProperties);
+            _groupedSerializedProperties = GetGroupedProperties(serializedProperties);
+            _foldoutSerializedProperties = GetFoldoutProperties(serializedProperties);
 
             // Cache the property paths for non-grouped serialized fields per type (shared across instances)
             foreach (var property in _nonGroupedSerializedProperties)
             {
-                var tuple = (type, property.propertyPath);
+                var tuple = (type, property.serializedProperty.propertyPath);
                 NonGroupedPropertyPaths.Add(tuple);
             }
 
@@ -144,7 +146,7 @@ namespace NaughtyAttributes.Editor
             {
                 foreach (var property in groupProperties)
                 {
-                    var tuple = (type, property.propertyPath);
+                    var tuple = (type, property.serializedProperty.propertyPath);
                     PropertyPathToBoxGroupName.Add(tuple, groupProperties.Key);
                 }
             }
@@ -154,7 +156,7 @@ namespace NaughtyAttributes.Editor
             {
                 foreach (var property in foldoutProperties)
                 {
-                    var tuple = (type, property.propertyPath);
+                    var tuple = (type, property.serializedProperty.propertyPath);
                     PropertyPathToFoldoutName.Add(tuple, foldoutProperties.Key);
                 }
             }
@@ -179,7 +181,7 @@ namespace NaughtyAttributes.Editor
             foreach (var property in serializedProperties)
             {
                 // Skip if the serialized property does not match any non-serialized field
-                if (!nonSerializedFieldMap.TryGetValue(property.name, out var field)) continue;
+                if (!nonSerializedFieldMap.TryGetValue(property.serializedProperty.name, out var field)) continue;
 
                 // Try to get the asset path
                 var path = target switch
@@ -206,29 +208,29 @@ namespace NaughtyAttributes.Editor
             }
 
             // Cache presence flags for quick UI checks
-            _inspectorTypeInfo.HasNonSerializedFields = nonSerializedFields.Count         != 0;
-            _inspectorTypeInfo.HasNativeProperties    = nativeProperties.Length           != 0;
-            _inspectorTypeInfo.HasMethods             = _inspectorTypeInfo.Methods.Length != 0;
-            _inspectorTypeInfo.AnyNaughtyAttribute = serializedProperties.Any(static p => PropertyUtility.GetAttribute<INaughtyAttribute>(p) != null) ||
+            _inspectorTypeInfo.HasNonSerializedFields = nonSerializedFields.Count != 0;
+            _inspectorTypeInfo.HasNativeProperties = nativeProperties.Length != 0;
+            _inspectorTypeInfo.HasMethods = _inspectorTypeInfo.Methods.Length != 0;
+            _inspectorTypeInfo.AnyNaughtyAttribute = serializedProperties.Any(static p => PropertyUtility.GetAttribute<INaughtyAttribute>(p.serializedProperty) != null) ||
                                                      _inspectorTypeInfo.HasNonSerializedFields || _inspectorTypeInfo.HasNativeProperties || _inspectorTypeInfo.HasMethods;
 
             // Categorize and cache the nonserialized fields into ungrouped, [BoxGroup], and [Foldout] groups
             _inspectorTypeInfo.NonGroupedNonSerializedFields = GetNonGroupedFields(nonSerializedFields);
-            _inspectorTypeInfo.GroupedNonSerializedFields    = GetGroupedFields(nonSerializedFields);
-            _inspectorTypeInfo.FoldoutNonSerializedFields    = GetFoldoutFields(nonSerializedFields);
+            _inspectorTypeInfo.GroupedNonSerializedFields = GetGroupedFields(nonSerializedFields);
+            _inspectorTypeInfo.FoldoutNonSerializedFields = GetFoldoutFields(nonSerializedFields);
 
             // Match C# native properties (e.g., int, Vector3 getters/setters) to each grouped serialized property (field)
             // Entries with no matching property will be null
             // Only the names are used for mapping, so even if the SerializedProperty instances change, the mapping remains valid
-            _inspectorTypeInfo.NonGroupedSerializedNativeProperties = MatchNativeProperties(_nonGroupedSerializedProperties, nativeProperties, static x => x.name);
-            _inspectorTypeInfo.GroupedSerializedNativeProperties    = MatchNativeProperties(_groupedSerializedProperties,    nativeProperties, static x => x.Key);
-            _inspectorTypeInfo.FoldoutSerializedNativeProperties    = MatchNativeProperties(_foldoutSerializedProperties,    nativeProperties, static x => x.Key);
+            _inspectorTypeInfo.NonGroupedSerializedNativeProperties = MatchNativeProperties(_nonGroupedSerializedProperties, nativeProperties, static x => x.serializedProperty.name);
+            _inspectorTypeInfo.GroupedSerializedNativeProperties = MatchNativeProperties(_groupedSerializedProperties, nativeProperties, static x => x.Key);
+            _inspectorTypeInfo.FoldoutSerializedNativeProperties = MatchNativeProperties(_foldoutSerializedProperties, nativeProperties, static x => x.Key);
 
             // Match C# native properties (e.g., int, Vector3 getters/setters) to each grouped non-serialized field
             // Entries with no matching property will be null
             _inspectorTypeInfo.NonGroupedNonSerializedNativeProperties = MatchNativeProperties(_inspectorTypeInfo.NonGroupedNonSerializedFields, nativeProperties, static x => x.Name);
-            _inspectorTypeInfo.GroupedNonSerializedNativeProperties    = MatchNativeProperties(_inspectorTypeInfo.GroupedNonSerializedFields,    nativeProperties, static x => x.Key);
-            _inspectorTypeInfo.FoldoutNonSerializedNativeProperties    = MatchNativeProperties(_inspectorTypeInfo.FoldoutNonSerializedFields,    nativeProperties, static x => x.Key);
+            _inspectorTypeInfo.GroupedNonSerializedNativeProperties = MatchNativeProperties(_inspectorTypeInfo.GroupedNonSerializedFields, nativeProperties, static x => x.Key);
+            _inspectorTypeInfo.FoldoutNonSerializedNativeProperties = MatchNativeProperties(_inspectorTypeInfo.FoldoutNonSerializedFields, nativeProperties, static x => x.Key);
 
             // Identify native C# properties not associated with any drawn field, so they can be rendered separately
             var allExcludedProperties = _inspectorTypeInfo.NonGroupedSerializedNativeProperties
@@ -241,6 +243,7 @@ namespace NaughtyAttributes.Editor
 
             // Collect native properties that aren't matched to any serialized or non-serialized field, for separate display
             _inspectorTypeInfo.OtherNativeProperties = nativeProperties.Except(allExcludedProperties).ToArray();
+            _useCachedMetaAttributes = false;
         }
 
         protected virtual void OnDisable()
@@ -250,6 +253,8 @@ namespace NaughtyAttributes.Editor
 
         public override void OnInspectorGUI()
         {
+            _changeDetected = false;
+
             if (_inspectorTypeInfo is not { AnyNaughtyAttribute: true })
             {
                 DrawDefaultInspector();
@@ -261,17 +266,18 @@ namespace NaughtyAttributes.Editor
                 DrawNativeProperties();
                 DrawButtons();
             }
+            _useCachedMetaAttributes = !_changeDetected;
         }
 
-        protected List<SerializedProperty> GetSerializedProperties()
+        protected List<NaughtyProperty> GetSerializedProperties()
         {
-            var       outSerializedProperties = new List<SerializedProperty>();
-            using var iterator                = serializedObject.GetIterator();
+            var outSerializedProperties = new List<NaughtyProperty>();
+            using var iterator = serializedObject.GetIterator();
             if (iterator.NextVisible(true))
             {
                 do
                 {
-                    outSerializedProperties.Add(serializedObject.FindProperty(iterator.name));
+                    outSerializedProperties.Add(PropertyUtility.CreateNaughtyProperty(serializedObject.FindProperty(iterator.name)));
                 } while (iterator.NextVisible(false));
             }
 
@@ -305,20 +311,23 @@ namespace NaughtyAttributes.Editor
             for (var i = 0; i < _nonGroupedSerializedProperties.Length; i++)
             {
                 var property = _nonGroupedSerializedProperties[i];
-                if (property.name.Equals("m_Script", StringComparison.Ordinal))
+                if (property.serializedProperty.name.Equals("m_Script", StringComparison.Ordinal))
                 {
                     using (new EditorGUI.DisabledScope(disabled: true))
                     {
-                        EditorGUILayout.PropertyField(property);
+                        EditorGUILayout.PropertyField(property.serializedProperty);
                     }
                 }
                 else
                 {
                     var nativeProperty = _inspectorTypeInfo.NonGroupedSerializedNativeProperties[i];
                     if (nativeProperty != null && EditorApplication.isPlayingOrWillChangePlaymode) // display matching native property if in play mode instead of field
-                        NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.name);
+                        NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.serializedProperty.name);
                     else
-                        NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
+                    {
+                        if (!_useCachedMetaAttributes) property.CheckVisibleAndEnabled();
+                        _changeDetected |= NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
+                    }
                 }
             }
 
@@ -326,7 +335,7 @@ namespace NaughtyAttributes.Editor
             for (var i = 0; i < _groupedSerializedProperties.Length; i++)
             {
                 var group = _groupedSerializedProperties[i];
-                var visibleProperties = group.Where(static p => PropertyUtility.IsVisible(p)).ToArray();
+                IEnumerable<NaughtyProperty> visibleProperties = GetVisibleFromGroup(group);
                 if (!visibleProperties.Any())
                 {
                     continue;
@@ -337,9 +346,9 @@ namespace NaughtyAttributes.Editor
                 {
                     var nativeProperty = _inspectorTypeInfo.GroupedSerializedNativeProperties[i];
                     if (nativeProperty != null && EditorApplication.isPlayingOrWillChangePlaymode) // display matching native property if in play mode instead of field
-                        NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.name);
+                        NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.serializedProperty.name);
                     else
-                        NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
+                        _changeDetected |= NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
                 }
 
                 NaughtyEditorGUI.EndBoxGroup_Layout();
@@ -349,7 +358,7 @@ namespace NaughtyAttributes.Editor
             for (var i = 0; i < _foldoutSerializedProperties.Length; i++)
             {
                 var group = _foldoutSerializedProperties[i];
-                var visibleProperties = group.Where(static p => PropertyUtility.IsVisible(p)).ToArray();
+                IEnumerable<NaughtyProperty> visibleProperties = GetVisibleFromGroup(group);
                 if (!visibleProperties.Any())
                 {
                     continue;
@@ -368,9 +377,9 @@ namespace NaughtyAttributes.Editor
                     {
                         var nativeProperty = _inspectorTypeInfo.FoldoutSerializedNativeProperties[i];
                         if (nativeProperty != null && EditorApplication.isPlayingOrWillChangePlaymode) // display matching native property if in play mode instead of field
-                            NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.name);
+                            NaughtyEditorGUI.NativeProperty_Layout(serializedObject.targetObject, nativeProperty, property.serializedProperty.name);
                         else
-                            NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
+                            _changeDetected |= NaughtyEditorGUI.PropertyField_Layout(property, includeChildren: true);
                     }
 
                     EditorGUI.indentLevel--;
@@ -378,6 +387,13 @@ namespace NaughtyAttributes.Editor
             }
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private IEnumerable<NaughtyProperty> GetVisibleFromGroup(IGrouping<string, NaughtyProperty> group)
+        {
+            return _useCachedMetaAttributes
+                ? group.Where(p => p.cachedIsVisible)
+                : group.Where(p => p.CheckVisibleAndEnabled());
         }
 
         protected void DrawNonSerializedStructOrField(object targetObj, FieldInfo field, PropertyInfo nativeProperty)
@@ -519,14 +535,14 @@ namespace NaughtyAttributes.Editor
             }
         }
 
-        private static SerializedProperty[] GetNonGroupedPropertiesCached(Type type, IEnumerable<SerializedProperty> properties)
+        private static NaughtyProperty[] GetNonGroupedPropertiesCached(Type type, IEnumerable<NaughtyProperty> properties)
         {
-            return properties.Where(p => NonGroupedPropertyPaths.Contains((type, p.propertyPath))).ToArray();
+            return properties.Where(p => NonGroupedPropertyPaths.Contains((type, p.serializedProperty.propertyPath))).ToArray();
         }
 
-        private static SerializedProperty[] GetNonGroupedProperties(IEnumerable<SerializedProperty> properties)
+        private static NaughtyProperty[] GetNonGroupedProperties(IEnumerable<NaughtyProperty> properties)
         {
-            return properties.Where(static p => PropertyUtility.GetAttribute<IGroupAttribute>(p) == null).ToArray();
+            return properties.Where(static p => PropertyUtility.GetAttribute<IGroupAttribute>(p.serializedProperty) == null).ToArray();
         }
 
         private static FieldInfo[] GetNonGroupedFields(IEnumerable<FieldInfo> fieldInfos)
@@ -534,22 +550,22 @@ namespace NaughtyAttributes.Editor
             return fieldInfos.Where(static f => PropertyUtility.GetAttribute<IGroupAttribute>(f) == null).ToArray();
         }
 
-        private static IGrouping<string, SerializedProperty>[] GetGroupedPropertiesCached(Type type, IEnumerable<SerializedProperty> properties)
+        private static IGrouping<string, NaughtyProperty>[] GetGroupedPropertiesCached(Type type, IEnumerable<NaughtyProperty> properties)
         {
             return properties
                   .Select(p => (Property: p,
-                                Key: PropertyPathToBoxGroupName.GetValueOrDefault((type, p.propertyPath))))
+                                Key: PropertyPathToBoxGroupName.GetValueOrDefault((type, p.serializedProperty.propertyPath))))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
-        private static IGrouping<string, SerializedProperty>[] GetGroupedProperties(IEnumerable<SerializedProperty> properties)
+        private static IGrouping<string, NaughtyProperty>[] GetGroupedProperties(IEnumerable<NaughtyProperty> properties)
         {
             return properties
                   .Select(static p => (Property: p,
-                                       Key: PropertyUtility.GetAttribute<BoxGroupAttribute>(p)?.Name))
+                                       Key: PropertyUtility.GetAttribute<BoxGroupAttribute>(p.serializedProperty)?.Name))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
         private static IGrouping<string, FieldInfo>[] GetGroupedFields(IEnumerable<FieldInfo> properties)
@@ -558,25 +574,25 @@ namespace NaughtyAttributes.Editor
                   .Select(static p => (Property: p,
                                        Key: PropertyUtility.GetAttribute<BoxGroupAttribute>(p)?.Name))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
-        private static IGrouping<string, SerializedProperty>[] GetFoldoutPropertiesCached(Type type, IEnumerable<SerializedProperty> properties)
+        private static IGrouping<string, NaughtyProperty>[] GetFoldoutPropertiesCached(Type type, IEnumerable<NaughtyProperty> properties)
         {
             return properties
                   .Select(p => (Property: p,
-                                Key: PropertyPathToFoldoutName.GetValueOrDefault((type, p.propertyPath))))
+                                Key: PropertyPathToFoldoutName.GetValueOrDefault((type, p.serializedProperty.propertyPath))))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
-        private static IGrouping<string, SerializedProperty>[] GetFoldoutProperties(IEnumerable<SerializedProperty> properties)
+        private static IGrouping<string, NaughtyProperty>[] GetFoldoutProperties(IEnumerable<NaughtyProperty> properties)
         {
             return properties
                   .Select(static p => (Property: p,
-                                       Key: PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name))
+                                       Key: PropertyUtility.GetAttribute<FoldoutAttribute>(p.serializedProperty)?.Name))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
         private static IGrouping<string, FieldInfo>[] GetFoldoutFields(IEnumerable<FieldInfo> properties)
@@ -585,7 +601,7 @@ namespace NaughtyAttributes.Editor
                   .Select(static p => (Property: p,
                                        Key: PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name))
                   .Where(static x => x.Key != null)
-                  .GroupBy(static x => x.Key!, static x => x.Property) .ToArray();
+                  .GroupBy(static x => x.Key!, static x => x.Property).ToArray();
         }
 
         private static GUIStyle GetHeaderGUIStyle()
