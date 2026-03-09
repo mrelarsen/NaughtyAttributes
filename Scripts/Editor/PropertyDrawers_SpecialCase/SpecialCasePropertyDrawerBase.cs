@@ -5,39 +5,44 @@ using UnityEngine;
 
 namespace NaughtyAttributes.Editor
 {
-    public abstract class SpecialCasePropertyDrawerBase
-    {
-        public void OnGUI(Rect rect, SerializedProperty property)
-        {
-            // Check if visible
-            bool visible = PropertyUtility.IsVisible(property);
-            if (!visible)
-            {
-                return;
-            }
+	public abstract class SpecialCasePropertyDrawerBase
+	{
+		public bool OnGUI(Rect rect, NaughtyProperty naughtyProperty)
+		{
+			bool changeDetected = false;
+			
+			// Check if visible
+			bool visible = PropertyUtility.IsVisible(naughtyProperty.showIfAttribute, naughtyProperty.serializedProperty);
+			if (!visible)
+			{
+				return false;
+			}
 
-            // Validate
-            ValidatorAttribute[] validatorAttributes = PropertyUtility.GetAttributes<ValidatorAttribute>(property);
-            foreach (var validatorAttribute in validatorAttributes)
-            {
-                validatorAttribute.GetValidator().ValidateProperty(property);
-            }
+			// Validate
+			ValidatorAttribute[] validatorAttributes = naughtyProperty.validatorAttributes;
+			foreach (var validatorAttribute in validatorAttributes)
+			{
+				validatorAttribute.GetValidator().ValidateProperty(naughtyProperty.serializedProperty, validatorAttribute);
+			}
 
-            // Check if enabled and draw
-            EditorGUI.BeginChangeCheck();
-            bool enabled = PropertyUtility.IsEnabled(property);
+			// Check if enabled and draw
+			EditorGUI.BeginChangeCheck();
+			bool enabled = PropertyUtility.IsEnabled(naughtyProperty.readOnlyAttribute, naughtyProperty.enableIfAttribute, naughtyProperty.serializedProperty);
 
-            using (new EditorGUI.DisabledScope(disabled: !enabled))
-            {
-                OnGUI_Internal(rect, property, PropertyUtility.GetLabel(property));
-            }
+			using (new EditorGUI.DisabledScope(disabled: !enabled))
+			{
+				OnGUI_Internal(rect, naughtyProperty.serializedProperty, PropertyUtility.GetLabel(naughtyProperty.labelAttribute, naughtyProperty.serializedProperty));
+			}
 
-            // Call OnValueChanged callbacks
-            if (EditorGUI.EndChangeCheck())
-            {
-                PropertyUtility.CallOnValueChangedCallbacks(property);
-            }
-        }
+			// Call OnValueChanged callbacks
+			if (EditorGUI.EndChangeCheck())
+			{
+				changeDetected = true;
+				PropertyUtility.CallOnValueChangedCallbacks(naughtyProperty.serializedProperty);
+			}
+
+			return changeDetected;
+		}
 
         public float GetPropertyHeight(SerializedProperty property)
         {

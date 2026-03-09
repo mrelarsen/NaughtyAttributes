@@ -4,13 +4,18 @@ using System.Reflection;
 
 namespace NaughtyAttributes.Editor
 {
-    [CustomPropertyDrawer(typeof(ProgressBarAttribute))]
-    public class ProgressBarPropertyDrawer : PropertyDrawerBase
-    {
-        protected override float GetPropertyHeight_Internal(SerializedProperty property, GUIContent label)
-        {
-            ProgressBarAttribute progressBarAttribute = PropertyUtility.GetAttribute<ProgressBarAttribute>(property);
-            var maxValue = GetMaxValue(property, progressBarAttribute);
+	[CustomPropertyDrawer(typeof(ProgressBarAttribute))]
+	public class ProgressBarPropertyDrawer : PropertyDrawerBase
+	{
+		private ProgressBarAttribute _cachedProgressBarAttribute;
+		
+		protected override float GetPropertyHeight_Internal(SerializedProperty property, GUIContent label)
+		{
+			if (_cachedProgressBarAttribute == null)
+				_cachedProgressBarAttribute = PropertyUtility.GetAttribute<ProgressBarAttribute>(property);
+			
+			ProgressBarAttribute progressBarAttribute = _cachedProgressBarAttribute;
+			var maxValue = GetMaxValue(property, progressBarAttribute);
 
             return IsNumber(property) && IsNumber(maxValue)
                 ? GetPropertyHeight(property)
@@ -28,10 +33,13 @@ namespace NaughtyAttributes.Editor
                 return;
             }
 
-            ProgressBarAttribute progressBarAttribute = PropertyUtility.GetAttribute<ProgressBarAttribute>(property);
-            var value = property.propertyType == SerializedPropertyType.Integer ? property.intValue : property.floatValue;
-            var valueFormatted = property.propertyType == SerializedPropertyType.Integer ? value.ToString() : string.Format("{0:0.00}", value);
-            var maxValue = GetMaxValue(property, progressBarAttribute);
+			if (_cachedProgressBarAttribute == null)
+				_cachedProgressBarAttribute = PropertyUtility.GetAttribute<ProgressBarAttribute>(property);
+			
+			ProgressBarAttribute progressBarAttribute = _cachedProgressBarAttribute;
+			var value = property.propertyType == SerializedPropertyType.Integer ? property.intValue : property.floatValue;
+			var valueFormatted = property.propertyType == SerializedPropertyType.Integer ? value.ToString() : string.Format("{0:0.00}", value);
+			var maxValue = GetMaxValue(property, progressBarAttribute);
 
             if (maxValue != null && IsNumber(maxValue))
             {

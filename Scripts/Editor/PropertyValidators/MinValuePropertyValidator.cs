@@ -3,11 +3,14 @@ using UnityEditor;
 
 namespace NaughtyAttributes.Editor
 {
-    public class MinValuePropertyValidator : PropertyValidatorBase
-    {
-        public override void ValidateProperty(SerializedProperty property)
-        {
-            MinValueAttribute minValueAttribute = PropertyUtility.GetAttribute<MinValueAttribute>(property);
+	public class MinValuePropertyValidator : PropertyValidatorBase
+	{
+		public override void ValidateProperty(SerializedProperty property, ValidatorAttribute attribute)
+		{
+			if (attribute == null)
+				attribute = PropertyUtility.GetAttribute<MinValueAttribute>(property);
+			
+			MinValueAttribute minValueAttribute = (MinValueAttribute)attribute;
 
             if (property.propertyType == SerializedPropertyType.Integer)
             {

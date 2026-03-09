@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Linq;
 using System.Reflection;
+
 using UnityEditor;
 using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.SceneManagement;
@@ -12,73 +13,74 @@ namespace NaughtyAttributes.Editor
 {
     public static class NaughtyEditorGUI
     {
-        public const float IndentLength = 15.0f;
         public const float HorizontalSpacing = 2.0f;
 
-        private static GUIStyle _buttonStyle = new GUIStyle(GUI.skin.button) { richText = true };
+		private static GUIStyle _buttonStyle = new GUIStyle(GUI.skin.button) { richText = true };
 
-        private delegate void PropertyFieldFunction(Rect rect, SerializedProperty property, GUIContent label, bool includeChildren);
+		private delegate void PropertyFieldFunction(Rect rect, NaughtyProperty naughtyProperty, GUIContent label, bool includeChildren);
 
-        public static void PropertyField(Rect rect, SerializedProperty property, bool includeChildren)
-        {
-            PropertyField_Implementation(rect, property, includeChildren, DrawPropertyField);
-        }
+		public static bool PropertyField(Rect rect, NaughtyProperty naughtyProperty, bool includeChildren)
+		{
+			return PropertyField_Implementation(rect, naughtyProperty, includeChildren, DrawPropertyField);
+		}
 
-        public static void PropertyField_Layout(SerializedProperty property, bool includeChildren)
-        {
-            Rect dummyRect = new Rect();
-            PropertyField_Implementation(dummyRect, property, includeChildren, DrawPropertyField_Layout);
-        }
+		public static bool PropertyField_Layout(NaughtyProperty naughtyProperty, bool includeChildren)
+		{
+			Rect dummyRect = new Rect();
+			return PropertyField_Implementation(dummyRect, naughtyProperty, includeChildren, DrawPropertyField_Layout);
+		}
 
-        private static void DrawPropertyField(Rect rect, SerializedProperty property, GUIContent label, bool includeChildren)
-        {
-            EditorGUI.PropertyField(rect, property, label, includeChildren);
-        }
+		private static void DrawPropertyField(Rect rect, NaughtyProperty naughtyProperty, GUIContent label, bool includeChildren)
+		{
+			EditorGUI.PropertyField(rect, naughtyProperty.serializedProperty, label, includeChildren);
+		}
 
-        private static void DrawPropertyField_Layout(Rect rect, SerializedProperty property, GUIContent label, bool includeChildren)
-        {
-            EditorGUILayout.PropertyField(property, label, includeChildren);
-        }
+		private static void DrawPropertyField_Layout(Rect rect, NaughtyProperty naughtyProperty, GUIContent label, bool includeChildren)
+		{
+			EditorGUILayout.PropertyField(naughtyProperty.serializedProperty, label, includeChildren);
+		}
 
-        private static void PropertyField_Implementation(Rect rect, SerializedProperty property, bool includeChildren, PropertyFieldFunction propertyFieldFunction)
-        {
-            SpecialCaseDrawerAttribute specialCaseAttribute = PropertyUtility.GetAttribute<SpecialCaseDrawerAttribute>(property);
-            if (specialCaseAttribute?.GetDrawer() is SpecialCasePropertyDrawerBase drawer)
-            {
-                drawer.OnGUI(rect, property);
-            }
-            else
-            {
-                // Check if visible
-                bool visible = PropertyUtility.IsVisible(property);
-                if (!visible)
-                {
-                    return;
-                }
+		private static bool PropertyField_Implementation(Rect rect, NaughtyProperty naughtyProperty, bool includeChildren, PropertyFieldFunction propertyFieldFunction)
+		{
+			bool changeDetected = false;
+			
+			if (naughtyProperty.specialCaseDrawerAttribute != null)
+			{
+				return naughtyProperty.specialCaseDrawerAttribute.GetDrawer().OnGUI(rect, naughtyProperty);
+			}
+			else
+			{
+				// Check if visible
+				if (!naughtyProperty.cachedIsVisible)
+				{
+					return false;
+				}
+				
+				// Validate
+				foreach (var validatorAttribute in naughtyProperty.validatorAttributes)
+				{
+					validatorAttribute.GetValidator().ValidateProperty(naughtyProperty.serializedProperty, validatorAttribute);
+				}
+				
+				// Check if enabled and draw
+				EditorGUI.BeginChangeCheck();
+				bool enabled = naughtyProperty.cachedIsEnabled;
+				
+				using (new EditorGUI.DisabledScope(disabled: !enabled))
+				{
+					propertyFieldFunction.Invoke(rect, naughtyProperty, PropertyUtility.GetLabel(naughtyProperty.labelAttribute, naughtyProperty.serializedProperty), includeChildren);
+				}
+				
+				// Call OnValueChanged callbacks
+				if (EditorGUI.EndChangeCheck())
+				{
+					changeDetected = true;
+					PropertyUtility.CallOnValueChangedCallbacks(naughtyProperty.serializedProperty);
+				}
+			}
 
-                // Validate
-                ValidatorAttribute[] validatorAttributes = PropertyUtility.GetAttributes<ValidatorAttribute>(property);
-                foreach (var validatorAttribute in validatorAttributes)
-                {
-                    validatorAttribute.GetValidator().ValidateProperty(property);
-                }
-
-                // Check if enabled and draw
-                EditorGUI.BeginChangeCheck();
-                bool enabled = PropertyUtility.IsEnabled(property);
-
-                using (new EditorGUI.DisabledScope(disabled: !enabled))
-                {
-                    propertyFieldFunction.Invoke(rect, property, PropertyUtility.GetLabel(property), includeChildren);
-                }
-
-                // Call OnValueChanged callbacks
-                if (EditorGUI.EndChangeCheck())
-                {
-                    PropertyUtility.CallOnValueChangedCallbacks(property);
-                }
-            }
-        }
+			return changeDetected;
+		}
 
         public static float GetIndentLength(Rect sourceRect)
         {
@@ -102,30 +104,30 @@ namespace NaughtyAttributes.Editor
             EditorGUILayout.EndVertical();
         }
 
-        /// <summary>
-        /// Creates a dropdown
-        /// </summary>
-        /// <param name="rect">The rect the defines the position and size of the dropdown in the inspector</param>
-        /// <param name="serializedObject">The serialized object that is being updated</param>
-        /// <param name="target">The target object that contains the dropdown</param>
-        /// <param name="dropdownField">The field of the target object that holds the currently selected dropdown value</param>
-        /// <param name="label">The label of the dropdown</param>
-        /// <param name="selectedValueIndex">The index of the value from the values array</param>
-        /// <param name="values">The values of the dropdown</param>
-        /// <param name="displayOptions">The display options for the values</param>
-        public static void Dropdown(
-            Rect rect, SerializedObject serializedObject, object target, FieldInfo dropdownField,
-            string label, int selectedValueIndex, object[] values, string[] displayOptions)
-        {
-            EditorGUI.BeginChangeCheck();
+		/// <summary>
+		/// Creates a dropdown
+		/// </summary>
+		/// <param name="rect">The rect the defines the position and size of the dropdown in the inspector</param>
+		/// <param name="serializedObject">The serialized object that is being updated</param>
+		/// <param name="target">The target object that contains the dropdown</param>
+		/// <param name="dropdownField">The field of the target object that holds the currently selected dropdown value</param>
+		/// <param name="label">The label of the dropdown</param>
+		/// <param name="selectedValueIndex">The index of the value from the values array</param>
+		/// <param name="values">The values of the dropdown</param>
+		/// <param name="displayOptions">The display options for the values</param>
+		public static void Dropdown(
+			Rect rect, SerializedObject serializedObject, object target, FieldInfo dropdownField,
+			string label, int selectedValueIndex, object[] values, string[] displayOptions)
+		{
+			EditorGUI.BeginChangeCheck();
 
-            int newIndex = EditorGUI.Popup(rect, label, selectedValueIndex, displayOptions);
-            object newValue = values[newIndex];
-
-            object dropdownValue = dropdownField.GetValue(target);
-            if (dropdownValue == null || !dropdownValue.Equals(newValue))
-            {
-                Undo.RecordObject(serializedObject.targetObject, "Dropdown");
+			int newIndex = EditorGUI.Popup(rect, label, selectedValueIndex, displayOptions);
+			object newValue = values[newIndex];
+			object oldValue = dropdownField.GetValue(target);
+			
+			if ((newValue != null && oldValue == null) || !oldValue.Equals(newValue))
+			{
+				Undo.RecordObject(serializedObject.targetObject, "Dropdown");
 
                 // TODO: Problem with structs, because they are value type.
                 // The solution is to make boxing/unboxing but unfortunately I don't know the compile time type of the target object

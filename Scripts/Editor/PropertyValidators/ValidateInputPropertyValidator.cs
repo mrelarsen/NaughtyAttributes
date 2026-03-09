@@ -4,12 +4,15 @@ using System;
 
 namespace NaughtyAttributes.Editor
 {
-    public class ValidateInputPropertyValidator : PropertyValidatorBase
-    {
-        public override void ValidateProperty(SerializedProperty property)
-        {
-            ValidateInputAttribute validateInputAttribute = PropertyUtility.GetAttribute<ValidateInputAttribute>(property);
-            object target = PropertyUtility.GetTargetObjectWithProperty(property);
+	public class ValidateInputPropertyValidator : PropertyValidatorBase
+	{
+		public override void ValidateProperty(SerializedProperty property, ValidatorAttribute attribute)
+		{
+			if (attribute == null)
+				attribute = PropertyUtility.GetAttribute<ValidateInputAttribute>(property);
+			
+			ValidateInputAttribute validateInputAttribute = (ValidateInputAttribute)attribute;
+			object target = PropertyUtility.GetTargetObjectWithProperty(property);
 
             MethodInfo validationCallback = ReflectionUtility.GetMethod(target, validateInputAttribute.CallbackName);
 

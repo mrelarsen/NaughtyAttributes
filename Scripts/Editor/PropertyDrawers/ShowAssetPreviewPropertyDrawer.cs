@@ -3,28 +3,30 @@ using UnityEditor;
 
 namespace NaughtyAttributes.Editor
 {
-    [CustomPropertyDrawer(typeof(ShowAssetPreviewAttribute))]
-    public class ShowAssetPreviewPropertyDrawer : PropertyDrawerBase
-    {
-        protected override float GetPropertyHeight_Internal(SerializedProperty property, GUIContent label)
-        {
-            if (property.propertyType == SerializedPropertyType.ObjectReference)
-            {
-                Texture2D previewTexture = GetAssetPreview(property);
-                if (previewTexture != null)
-                {
-                    return GetPropertyHeight(property) + GetAssetPreviewSize(property).y;
-                }
-                else
-                {
-                    return GetPropertyHeight(property);
-                }
-            }
-            else
-            {
-                return GetPropertyHeight(property) + GetHelpBoxHeight();
-            }
-        }
+	[CustomPropertyDrawer(typeof(ShowAssetPreviewAttribute))]
+	public class ShowAssetPreviewPropertyDrawer : PropertyDrawerBase
+	{
+		private ShowAssetPreviewAttribute _cachedShowAssetPreviewAttribute;
+		
+		protected override float GetPropertyHeight_Internal(SerializedProperty property, GUIContent label)
+		{
+			if (property.propertyType == SerializedPropertyType.ObjectReference)
+			{
+				Texture2D previewTexture = GetAssetPreview(property);
+				if (previewTexture != null)
+				{
+					return GetPropertyHeight(property) + GetAssetPreviewSize(property).y;
+				}
+				else
+				{
+					return GetPropertyHeight(property);
+				}
+			}
+			else
+			{
+				return GetPropertyHeight(property) + GetHelpBoxHeight();
+			}
+		}
 
         protected override void OnGUI_Internal(Rect rect, SerializedProperty property, GUIContent label)
         {
@@ -103,12 +105,16 @@ namespace NaughtyAttributes.Editor
                 int targetWidth = ShowAssetPreviewAttribute.DefaultWidth;
                 int targetHeight = ShowAssetPreviewAttribute.DefaultHeight;
 
-                ShowAssetPreviewAttribute showAssetPreviewAttribute = PropertyUtility.GetAttribute<ShowAssetPreviewAttribute>(property);
-                if (showAssetPreviewAttribute != null)
-                {
-                    targetWidth = showAssetPreviewAttribute.Width;
-                    targetHeight = showAssetPreviewAttribute.Height;
-                }
+				if (_cachedShowAssetPreviewAttribute == null)
+					_cachedShowAssetPreviewAttribute =
+						PropertyUtility.GetAttribute<ShowAssetPreviewAttribute>(property);
+				
+				ShowAssetPreviewAttribute showAssetPreviewAttribute = _cachedShowAssetPreviewAttribute;
+				if (showAssetPreviewAttribute != null)
+				{
+					targetWidth = showAssetPreviewAttribute.Width;
+					targetHeight = showAssetPreviewAttribute.Height;
+				}
 
                 int width = Mathf.Clamp(targetWidth, 0, previewTexture.width);
                 int height = Mathf.Clamp(targetHeight, 0, previewTexture.height);

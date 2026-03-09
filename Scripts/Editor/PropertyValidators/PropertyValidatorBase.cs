@@ -4,10 +4,10 @@ using UnityEditor;
 
 namespace NaughtyAttributes.Editor
 {
-    public abstract class PropertyValidatorBase
-    {
-        public abstract void ValidateProperty(SerializedProperty property);
-    }
+	public abstract class PropertyValidatorBase
+	{
+		public abstract void ValidateProperty(SerializedProperty property, ValidatorAttribute attribute);
+	}
 
     public static class ValidatorAttributeExtensions
     {
