@@ -1,16 +1,14 @@
 {
-    "name": "NaughtyAttributesPerfFork.Test",
-    "rootNamespace": "",
+    "name": "NaughtyAttributes.Test",
     "references": [
-        "NaughtyAttributesPerfFork.Core"
+        "NaughtyAttributes.Core"
     ],
+    "optionalUnityReferences": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": [],
-    "versionDefines": [],
-    "noEngineReferences": false
+    "defineConstraints": []
 }
